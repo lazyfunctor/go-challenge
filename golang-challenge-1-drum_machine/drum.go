@@ -4,21 +4,77 @@
 package drum
 
 import (
+	"fmt"
 	"bytes"
 	"encoding/binary"
 	"math"
 )
 
+// Pattern is the high level representation of the
+// drum pattern contained in a .splice file.
+type Pattern struct {
+	version string
+	tempo   float32
+	tracks  []*Track
+}
+
+func (pat *Pattern) String() string {
+	var prefix string
+	// dirty hack to truncate to no decimal place in case of whole numbers
+	if pat.tempo == float32(int32(pat.tempo)) {
+		prefix = fmt.Sprintf("Saved with HW Version: %s\nTempo: %.0f\n", pat.version, pat.tempo)
+	} else {
+		prefix = fmt.Sprintf("Saved with HW Version: %s\nTempo: %.1f\n", pat.version, pat.tempo)
+	}
+	trackStr := ""
+	for _, track := range pat.tracks {
+		trackStr += fmt.Sprint(track) + "\n"
+	}
+	return prefix + trackStr
+}
+
+type Track struct {
+	trackID int
+	name    string
+	steps   [16]byte
+}
+
+func (track *Track) String() string {
+	prefix := fmt.Sprintf("(%d) %s\t", track.trackID, track.name)
+	measure := "|"
+	for i, step := range track.steps {
+		if step == 0 {
+			measure += "-"
+		} else if step == 1 {
+			measure += "x"
+		}
+
+		if (i+1)%4 == 0 {
+			measure += "|"
+		}
+	}
+	return prefix + measure
+}
+
+type parseError struct {
+	msg    string
+	offset int
+}
+
+func (e *parseError) Error() string {
+	return e.msg
+}
+
 type decodeState struct {
 	data     []byte
 	offset   int
-	totallen int
+	datalen int
 }
 
 func (d *decodeState) init(data []byte) *decodeState {
 	d.data = data
 	d.offset = 0
-	d.totallen = len(data)
+	d.datalen = len(data)
 	return d
 }
 
@@ -39,10 +95,10 @@ func (d *decodeState) readHeader() (version string, tempo float32) {
 	}
 	_ = d.readBytes(7)
 	dataLen := int(d.readBytes(1)[0])
-	if d.totallen < dataLen {
+	if d.datalen < dataLen {
 		d.error(&parseError{msg: "Incomplete file", offset: d.offset})
 	} else {
-		d.totallen = dataLen
+		d.datalen = dataLen
 	}
 
 	version_info := d.readBytes(32)
@@ -73,9 +129,83 @@ func (d *decodeState) decode() (pat *Pattern) {
 	pat.tempo = tempo
 	var tracks []*Track
 	pat.tracks = tracks
-	for d.offset < d.totallen {
+	for d.offset < d.datalen {
 		track := d.parseTrack()
 		pat.tracks = append(pat.tracks, track)
 	}
+	return
+}
+
+type encodeState struct {
+	pat *Pattern
+	offset int
+	data []byte
+	dataLen int
+}
+
+func (e *encodeState) init(pat *Pattern) {
+	e.pat = pat
+	e.offset = 0
+	e.dataLen = e.calcLength()
+	totalLen := e.dataLen + 14     //6 bytes for main header + 7 empty bytes + 1 length byte
+	e.data = make([]byte, totalLen)
+}
+
+// make encddeState an io.Writer
+func (e *encodeState) Write(p []byte) (n int, err error){
+	for idx, val := range p {
+		e.data[e.offset + idx] = val
+		n += 1
+	}
+	e.offset += n
+	return
+}
+
+func (e *encodeState) writeHeader() (err error) {
+	var buf bytes.Buffer
+	buf.Write([]byte("SPLICE"))
+	buf.Write(bytes.Repeat([]byte{0}, 7))
+	buf.WriteByte(byte(e.dataLen))
+	ver_len := len(e.pat.version)
+	buf.Write([]byte(e.pat.version))
+	buf.Write(bytes.Repeat([]byte{0}, (32 - ver_len)))
+	bits := math.Float32bits(e.pat.tempo)
+	tempo := make([]byte, 4)
+	binary.LittleEndian.PutUint32(tempo, bits)
+	buf.Write(tempo)
+	_, err = buf.WriteTo(e)
+	return
+}
+
+func (e *encodeState) writeTrack(track *Track) (err error) {
+	var buf bytes.Buffer
+	buf.WriteByte(byte(track.trackID))
+	buf.Write(bytes.Repeat([]byte{0}, 3))
+	buf.WriteByte(byte(len(track.name)))
+	buf.Write([]byte(track.name))
+	buf.Write(track.steps[:])
+	_, err = buf.WriteTo(e)
+	return
+}
+
+func (e *encodeState) calcLength() int {
+	dataLen := 36 //version + tempo
+	for _, track :=  range e.pat.tracks {
+		dataLen += 5		     // trackid + len byte
+		dataLen += len(track.name) // track name
+		dataLen += 16            // steps
+	}
+	return dataLen
+}
+
+func (e *encodeState) encode() (data []byte, err error) {
+	err = e.writeHeader()
+	if (err != nil) {
+		return
+	}
+	for _, track :=  range e.pat.tracks {
+		e.writeTrack(track)
+	}
+	data = e.data
 	return
 }
