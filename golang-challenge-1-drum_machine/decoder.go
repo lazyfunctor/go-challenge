@@ -21,4 +21,3 @@ func DecodeFile(path string) (pat *Pattern, err error) {
 	pat = d.decode()
 	return
 }
-

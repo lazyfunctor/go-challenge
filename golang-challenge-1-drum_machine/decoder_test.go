@@ -62,7 +62,7 @@ Tempo: 999
 
 	for _, exp := range tData {
 		decoded, err := DecodeFile(path.Join("fixtures", exp.path))
-		EncodeToFile(path.Join("fixtures", exp.path + ".new"), decoded)
+		EncodeToFile(path.Join("fixtures", exp.path+".new"), decoded)
 		if err != nil {
 			t.Fatalf("something went wrong decoding %s - %v", exp.path, err)
 		}

@@ -4,9 +4,9 @@
 package drum
 
 import (
-	"fmt"
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"math"
 )
 
@@ -66,8 +66,8 @@ func (e *parseError) Error() string {
 }
 
 type decodeState struct {
-	data     []byte
-	offset   int
+	data    []byte
+	offset  int
 	datalen int
 }
 
@@ -137,9 +137,9 @@ func (d *decodeState) decode() (pat *Pattern) {
 }
 
 type encodeState struct {
-	pat *Pattern
-	offset int
-	data []byte
+	pat     *Pattern
+	offset  int
+	data    []byte
 	dataLen int
 }
 
@@ -147,14 +147,14 @@ func (e *encodeState) init(pat *Pattern) {
 	e.pat = pat
 	e.offset = 0
 	e.dataLen = e.calcLength()
-	totalLen := e.dataLen + 14     //6 bytes for main header + 7 empty bytes + 1 length byte
+	totalLen := e.dataLen + 14 //6 bytes for main header + 7 empty bytes + 1 length byte
 	e.data = make([]byte, totalLen)
 }
 
 // make encddeState an io.Writer
-func (e *encodeState) Write(p []byte) (n int, err error){
+func (e *encodeState) Write(p []byte) (n int, err error) {
 	for idx, val := range p {
-		e.data[e.offset + idx] = val
+		e.data[e.offset+idx] = val
 		n += 1
 	}
 	e.offset += n
@@ -190,20 +190,20 @@ func (e *encodeState) writeTrack(track *Track) (err error) {
 
 func (e *encodeState) calcLength() int {
 	dataLen := 36 //version + tempo
-	for _, track :=  range e.pat.tracks {
-		dataLen += 5		     // trackid + len byte
+	for _, track := range e.pat.tracks {
+		dataLen += 5               // trackid + len byte
 		dataLen += len(track.name) // track name
-		dataLen += 16            // steps
+		dataLen += 16              // steps
 	}
 	return dataLen
 }
 
 func (e *encodeState) encode() (data []byte, err error) {
 	err = e.writeHeader()
-	if (err != nil) {
+	if err != nil {
 		return
 	}
-	for _, track :=  range e.pat.tracks {
+	for _, track := range e.pat.tracks {
 		e.writeTrack(track)
 	}
 	data = e.data
